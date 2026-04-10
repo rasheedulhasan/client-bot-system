@@ -105,14 +105,26 @@ The menu is stored in `utils/menu.json`.
 6. Set Start Command: `npm start`
 7. Copy the public URL provided by Render and use it as your Webhook URL in Meta Developer Portal (e.g., `https://your-app.onrender.com/webhook`).
 
-### VPS (Ubuntu/Nginx)
-1. SSH into your VPS.
-2. Install Node.js, NPM, and PM2: `sudo apt install nodejs npm && npm install -g pm2`.
-3. Clone your repository.
-4. Create a `.env` file with your credentials.
-5. Start the app: `pm2 start server.js --name whatsapp-bot`.
-6. Set up Nginx as a reverse proxy to forward traffic from port 80 to 3000.
-7. Use `certbot` for SSL (Meta requires HTTPS).
+### DigitalOcean (Droplet)
+1. **SSH into your VPS**: `ssh root@your_ip`.
+2. **Install Node.js & PM2**: `sudo apt update && sudo apt install nodejs npm && npm install -g pm2`.
+3. **Database Options**:
+   - **Option A: Install MongoDB Locally (Free)**:
+     - Run: `sudo apt-get install -y mongodb`.
+     - Ensure it's running: `sudo systemctl status mongodb`.
+     - Your `.env` will use: `MONGODB_URI=mongodb://127.0.0.1:27017/whatsapp-bot`.
+   - **Option B: Use DigitalOcean Managed Database (Paid)**:
+     - Create a "MongoDB Database Cluster" in the DO dashboard.
+     - Copy the connection string and add it to your `.env` as `MONGODB_URI`.
+   - **Option C: Use MongoDB Atlas (Free Tier)**:
+     - Recommended for production if you don't want to manage the DB yourself.
+4. **Deploy App**:
+   - Clone repo, create `.env`, run `npm install`.
+   - Start with: `pm2 start server.js --name whatsapp-bot`.
+5. **Reverse Proxy (Nginx)**:
+   - Install Nginx: `sudo apt install nginx`.
+   - Configure it to forward port 80/443 to 3000.
+   - **Important**: Meta requires HTTPS (use `certbot` for free SSL).
 
 ## 🔐 Meta API Setup
 1. Go to [Meta for Developers](https://developers.facebook.com/).
