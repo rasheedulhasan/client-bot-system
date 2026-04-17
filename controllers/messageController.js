@@ -1,8 +1,8 @@
 const whatsappService = require('../services/whatsappService');
 const sessionManager = require('../sessions/sessionManager');
+const appwriteService = require('../services/appwriteService');
 const Order = require('../models/Order');
 const User = require('../models/User');
-const menu = require('../utils/menu.json');
 
 const handleIncomingMessage = async (req, res) => {
     try {
@@ -38,9 +38,12 @@ const handleIncomingMessage = async (req, res) => {
 
             console.log(`Message from ${from}: ${text || payload} (Step: ${session.currentStep})`);
 
+            // Fetch dynamic menu from Appwrite
+            const menu = await appwriteService.getMenuFromAppwrite();
+
             // State Machine / Flow Logic
             try {
-                await processFlow(from, userName, text, payload, session);
+                await processFlow(from, userName, text, payload, session, menu);
             } catch (flowError) {
                 console.error('Flow Error:', flowError);
                 await whatsappService.sendTextMessage(from, "⚠️ Sorry, something went wrong while processing your request. Please type 'hi' to start over.");
@@ -54,7 +57,7 @@ const handleIncomingMessage = async (req, res) => {
     }
 };
 
-const processFlow = async (from, userName, text, payload, session) => {
+const processFlow = async (from, userName, text, payload, session, menu) => {
     // Global commands
     if (text === 'hi' || text === 'hello' || text === 'menu' || payload === 'START') {
         return await sendWelcomeMessage(from, userName);
@@ -63,10 +66,10 @@ const processFlow = async (from, userName, text, payload, session) => {
     switch (session.currentStep) {
         case 'START':
             if (payload === 'VIEW_MENU' || text.includes('menu')) {
-                await sendCategories(from);
+                await sendCategories(from, menu);
                 sessionManager.updateSession(from, { currentStep: 'SELECT_CATEGORY' });
             } else if (payload === 'PLACE_ORDER' || text.includes('order')) {
-                await sendCategories(from);
+                await sendCategories(from, menu);
                 sessionManager.updateSession(from, { currentStep: 'SELECT_CATEGORY' });
             } else if (payload === 'CONTACT_SUPPORT' || text.includes('support')) {
                 await whatsappService.sendTextMessage(from, "Our support team will contact you shortly. Type 'hi' to return to menu.");
@@ -77,12 +80,12 @@ const processFlow = async (from, userName, text, payload, session) => {
             break;
 
         case 'SELECT_CATEGORY':
-            const category = menu.categories.find(c => c.id === payload || c.title.toLowerCase().includes(text));
+            const category = menu.categories.find(c => c.category === payload || c.name.toLowerCase().includes(text));
             if (category) {
                 await sendItems(from, category);
                 sessionManager.updateSession(from, { currentStep: 'SELECT_ITEM' });
             } else {
-                await sendCategories(from);
+                await sendCategories(from, menu);
             }
             break;
 
@@ -100,10 +103,10 @@ const processFlow = async (from, userName, text, payload, session) => {
                         currentStep: 'ASK_QUANTITY',
                         selectedItem: selectedItem
                     });
-                    await whatsappService.sendTextMessage(from, `How many ${selectedItem.name} would you like? (Please enter a number)`);
+                    await whatsappService.sendTextMessage(from, `How many ${selectedItem.title} would you like? (Please enter a number)`);
                 }
             } else if (payload === 'BACK_TO_CATEGORIES' || text.includes('back')) {
-                await sendCategories(from);
+                await sendCategories(from, menu);
                 sessionManager.updateSession(from, { currentStep: 'SELECT_CATEGORY' });
             }
             break;
@@ -113,7 +116,8 @@ const processFlow = async (from, userName, text, payload, session) => {
             if (!isNaN(qty) && qty > 0) {
                 const cart = session.cart || [];
                 cart.push({
-                    ...session.selectedItem,
+                    name: session.selectedItem.title,
+                    price: session.selectedItem.price,
                     qty: qty
                 });
                 sessionManager.updateSession(from, { 
@@ -133,7 +137,7 @@ const processFlow = async (from, userName, text, payload, session) => {
 
         case 'POST_ADD_ACTION':
             if (payload === 'VIEW_MENU' || text.includes('more')) {
-                await sendCategories(from);
+                await sendCategories(from, menu);
                 sessionManager.updateSession(from, { currentStep: 'SELECT_CATEGORY' });
             } else if (payload === 'CHECKOUT' || text.includes('checkout')) {
                 await whatsappService.sendTextMessage(from, "Great! Let's get your details.\nWhat is your full name?");
@@ -206,14 +210,18 @@ const sendWelcomeMessage = async (to, userName) => {
     await whatsappService.sendButtonMessage(to, text, buttons);
 };
 
-const sendCategories = async (to) => {
+const sendCategories = async (to, menu) => {
+    if (!menu.categories || menu.categories.length === 0) {
+        return await whatsappService.sendTextMessage(to, "Sorry, the menu is currently empty. Please check back later!");
+    }
+
     const sections = [
         {
             title: "Our Categories",
             rows: menu.categories.map(cat => ({
-                id: cat.id,
-                title: cat.title,
-                description: `View our delicious ${cat.title}`
+                id: cat.category,
+                title: cat.name,
+                description: `View our delicious ${cat.name}`
             }))
         }
     ];
@@ -224,10 +232,10 @@ const sendItems = async (to, category) => {
     // Meta API List messages are better for multiple items
     const sections = [
         {
-            title: category.title,
+            title: category.name,
             rows: category.items.map(item => ({
                 id: `ADD_${item.id}`,
-                title: item.name,
+                title: item.title,
                 description: `AED ${item.price}`
             }))
         },
@@ -236,7 +244,7 @@ const sendItems = async (to, category) => {
             rows: [{ id: 'BACK_TO_CATEGORIES', title: 'Back to Categories', description: 'Go back' }]
         }
     ];
-    await whatsappService.sendListMessage(to, `Menu: ${category.title}`, "Select Item", sections);
+    await whatsappService.sendListMessage(to, `Menu: ${category.name}`, "Select Item", sections);
 };
 
 const confirmOrder = async (from, session, paymentMethod) => {

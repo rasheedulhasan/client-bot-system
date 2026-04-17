@@ -3,6 +3,8 @@ const router = express.Router();
 const messageController = require('../controllers/messageController');
 require('dotenv').config();
 
+const appwriteService = require('../services/appwriteService');
+
 // Webhook Verification (GET)
 router.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -16,6 +18,17 @@ router.get('/webhook', (req, res) => {
         } else {
             res.sendStatus(403);
         }
+    }
+});
+
+// GET /api/menu - Fetches formatted menu from Appwrite
+router.get('/api/menu', async (req, res) => {
+    try {
+        const menu = await appwriteService.getMenuFromAppwrite();
+        res.json(menu);
+    } catch (error) {
+        console.error('API Error:', error);
+        res.status(500).json({ error: 'Failed to fetch menu' });
     }
 });
 
