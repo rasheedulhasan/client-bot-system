@@ -215,13 +215,16 @@ const sendCategories = async (to, menu) => {
         return await whatsappService.sendTextMessage(to, "Sorry, the menu is currently empty. Please check back later!");
     }
 
+    // WhatsApp List Messages limit: max 10 rows total
+    const categoriesToShow = menu.categories.slice(0, 10);
+
     const sections = [
         {
             title: "Our Categories",
-            rows: menu.categories.map(cat => ({
+            rows: categoriesToShow.map(cat => ({
                 id: cat.category,
-                title: cat.name,
-                description: `View our delicious ${cat.name}`
+                title: cat.name.substring(0, 24), // Max 24 chars
+                description: `View our delicious ${cat.name}`.substring(0, 72) // Max 72 chars
             }))
         }
     ];
@@ -229,22 +232,36 @@ const sendCategories = async (to, menu) => {
 };
 
 const sendItems = async (to, category) => {
-    // Meta API List messages are better for multiple items
-    const sections = [
-        {
-            title: category.name,
-            rows: category.items.map(item => ({
-                id: `ADD_${item.id}`,
-                title: item.title,
-                description: `AED ${item.price}`
-            }))
-        },
-        {
-            title: "Options",
-            rows: [{ id: 'BACK_TO_CATEGORIES', title: 'Back to Categories', description: 'Go back' }]
-        }
-    ];
-    await whatsappService.sendListMessage(to, `Menu: ${category.name}`, "Select Item", sections);
+    try {
+        // WhatsApp List Messages limit: max 10 rows total
+        // We leave 1 row for the "Back" option, so we show up to 9 items
+        const itemsToShow = category.items.slice(0, 9);
+
+        const sections = [
+            {
+                title: category.name.substring(0, 24),
+                rows: itemsToShow.map(item => ({
+                    id: `ADD_${item.id}`,
+                    title: item.title.substring(0, 24),
+                    description: `AED ${Number(item.price).toFixed(2)} - ${item.description || ''}`.substring(0, 72)
+                }))
+            },
+            {
+                title: "Options",
+                rows: [{ id: 'BACK_TO_CATEGORIES', title: 'Back to Categories', description: 'Go back' }]
+            }
+        ];
+        await whatsappService.sendListMessage(to, `Menu: ${category.name}`, "Select Item", sections);
+    } catch (error) {
+        console.error('Error sending items list:', error);
+        // Fallback: Send as a plain text message if list fails
+        let fallbackText = `*Menu: ${category.name}*\n\n`;
+        category.items.forEach((item, index) => {
+            fallbackText += `${index + 1}. ${item.title} - AED ${item.price}\n`;
+        });
+        fallbackText += `\nType 'hi' to return to menu.`;
+        await whatsappService.sendTextMessage(to, fallbackText);
+    }
 };
 
 const confirmOrder = async (from, session, paymentMethod) => {
